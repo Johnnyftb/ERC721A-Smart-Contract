@@ -14,7 +14,7 @@ Other small strategies were used to optimize for gas costs, such as the implemen
 
 A gas report for the contract can be seen below:
 
-![](./gas_report.PNG)
+![](./gas_report.png)
 
 ## Testing & Coverage
 
