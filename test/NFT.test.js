@@ -245,4 +245,131 @@ describe("NFT Smart Contract Unit Tests", () => {
             assert.equal(currentValue.toString(), newSaleState);
         })
     })
+
+    describe("'publicMint()'", () => {
+        it("Should revert if user has previously minted 3", async () => {
+            await contract.setSaleState(2);
+            await contract.publicMint(3, { value: ethers.utils.parseEther("0.3") });
+
+            await expect(contract.publicMint(1, { value: ethers.utils.parseEther("0.1") })).to.be.revertedWith("MintingTooMany");
+        })
+
+        it("Should revert if sale state isn't 2 (Public)", async () => {
+            await expect(contract.publicMint(1, { value: ethers.utils.parseEther("0.1") })).to.be.revertedWith("SaleIsClosed");
+        })
+
+        it("Should revert if caller sends insufficient funds", async () => {
+            await contract.setSaleState(2);
+            await expect(contract.publicMint(1, { value: ethers.utils.parseEther("0.05") })).to.be.revertedWith("InsufficientFunds");
+        })
+
+        it("Caller's balance should be 3 after minting 3", async () => {
+            await contract.setSaleState(2);
+            await contract.publicMint(3, { value: ethers.utils.parseEther("0.3") });
+
+            const currentValue = await contract.balanceOf(accounts[0].address);
+            const expectedValue = 3;
+            assert.equal(currentValue.toString(), expectedValue);
+        })
+
+        it("Total Supply should be 3", async () => {
+            await contract.setSaleState(2);
+            await contract.publicMint(3, { value: ethers.utils.parseEther("0.3") });
+
+            const currentValue = await contract.totalSupply();
+            const expectedValue = 3;
+            assert.equal(currentValue.toString(), expectedValue);
+        })
+    })
+
+    describe("'whitelistMint()'", () => {
+        let merkleProof;
+
+        beforeEach(async () => {
+            await contract.setWhitelistMerkleRoot(merkleRoot);
+            merkleProof = getMerkleProof(merkleTree, accounts[0].address);
+        })
+
+        it("Should revert if user has previously minted 1", async () => {
+            await contract.setSaleState(1);
+            await contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.05") });
+
+            await expect(contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.05") })).to.be.revertedWith("MintingTooMany")
+        })
+
+        it("Should revert if sale state isn't 1 (Whitelist)", async () => {
+            await expect(contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.05") })).to.be.revertedWith("SaleIsClosed");
+        })
+
+        it("Should revert if user sends insufficient funds", async () => {
+            await contract.setSaleState(1);
+            await expect(contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.01") })).to.be.revertedWith("InsufficientFunds");
+        })
+
+        it("Should revert if caller sends invalid merkle proof", async () => {
+            await contract.setSaleState(1);
+            const mockAddress = "0xb5E8683Aa524069C5714Fc2D8c3e64F78f2862fb"
+            const merkleProof = getMerkleProof(merkleTree, mockAddress);
+
+            await expect(contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.05") })).to.be.revertedWith("InvalidProof")
+        })
+
+        it("Caller's balance should be 1 after minting 1", async () => {
+            await contract.setSaleState(1);
+            await contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.05") })
+
+            const currentValue = await contract.balanceOf(accounts[0].address);
+            const expectedValue = 1;
+            assert.equal(currentValue.toString(), expectedValue);
+        })
+
+        it("Total supply should be 1 after minting 1", async () => {
+            await contract.setSaleState(1);
+            await contract.whitelistMint(merkleProof, 1, { value: ethers.utils.parseEther("0.05") })
+
+            const currentValue = await contract.totalSupply();
+            const expectedValue = 1;
+            assert.equal(currentValue.toString(), expectedValue);
+        })
+    })
+
+    describe("'tokenURI()'", () => {
+        it("Should return unrevealed URI if reveal is false", async () => {
+            const currentValue = await contract.tokenURI(1);
+            const expectedValue = "https://exampleUnrevealedUri.com";
+            assert.equal(currentValue, expectedValue);
+        })
+
+        it("Should return https://exampleUri.com/1.json if reveal is true and calling with parameter: 1", async () => {
+            await contract.toggleRevealed();
+            const currentValue = await contract.tokenURI(1);
+            const expectedValue = "https://exampleUri.com/1.json";
+            assert.equal(currentValue, expectedValue);
+        })
+    })
+
+    describe("'withdraw()'", () => {
+
+        beforeEach(async () => {
+            await contract.setSaleState(2);
+            const account1ConnnectedContract = contract.connect(accounts[1]);
+            await account1ConnnectedContract.publicMint(3, { value: ethers.utils.parseEther("0.3") });
+        })
+
+        it("Should revert if called by non-owner", async () => {
+            await expect(attackerConnectedContract.withdraw()).to.be.revertedWith("Ownable: caller is not the owner");
+        })
+
+        it("After minting 3 in the public sale, calling withdraw should send 0.3 ETH to the owner", async () => {
+            const ownerStartingBalance = await contract.provider.getBalance(accounts[0].address);
+            
+            const withdraw = await contract.withdraw();
+            const withdrawReceipt = await withdraw.wait();
+            const { gasUsed, effectiveGasPrice } = withdrawReceipt;
+            const gasCost = gasUsed.mul(effectiveGasPrice);
+
+            const ownerEndingBalance = await contract.provider.getBalance(accounts[0].address);
+            assert.equal(ownerEndingBalance.toString(), ownerStartingBalance.add(ethers.utils.parseEther("0.3")).sub(gasCost).toString())
+        })
+    })
 })
